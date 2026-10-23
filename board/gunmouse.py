@@ -145,6 +145,46 @@ def calibrate(i2c, ms=CAL_MS):
     return (mx / FS, my / FS, sz / n / FS, sdx / FS, sdy / FS)
 
 
+_LED = None
+_LED_MS = 0
+
+
+def _led_init():
+    """Optional status LED on ts_cfg.PIN_LED.  None disables it."""
+    global _LED
+    if _LED is not None:
+        return _LED
+    try:
+        import ts_cfg
+        n = getattr(ts_cfg, 'PIN_LED', None)
+        _LED = Pin(int(n), Pin.OUT, value=0) if n is not None else False
+    except Exception:
+        _LED = False
+    return _LED
+
+
+def _led_tick():
+    """solid = uplink up, slow blink = no wifi, fast blink = not configured."""
+    global _LED_MS
+    if not _led_init():
+        return
+    now = time.ticks_ms()
+    if time.ticks_diff(now, _LED_MS) < 20:
+        return
+    _LED_MS = now
+    net = shared.STATE.get('net')
+    phase = (now // 60) % 16
+    if net == 'up':
+        on = 1
+    elif net == 'no-wifi':
+        on = 1 if phase < 3 else 0
+    else:
+        on = 1 if phase < 1 else 0
+    try:
+        _LED.value(on)
+    except Exception:
+        pass
+
 def run():
     _buz_off()
     try:
@@ -440,6 +480,8 @@ def _run_inner():
                     oled.render(gear, 'PAUSED', 'hold L to resume')
                 else:
                     oled.render(gear, 'ACTIVE', 'ready')
+
+        _led_tick()
 
         n += 1
         t_next = time.ticks_add(t_next, 2)
