@@ -20,6 +20,10 @@ THINGSPEAK = {"channel": "3541064", "read_key": "35YX48TUIJDYNUQ6"}
 
 
 def default_source():
+    """Prefer the device on USB, then the cloud channel, then synthetic data."""
+    port = datamod.find_pico_port()
+    if port:
+        return datamod.make_source("serial", port=port)
     if THINGSPEAK.get("channel") and THINGSPEAK.get("read_key"):
         return datamod.make_source("cloud", **THINGSPEAK)
     return datamod.make_source("mock")
