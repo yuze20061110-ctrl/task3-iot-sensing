@@ -1,4 +1,4 @@
-import sys, os
+import sys, os, time
 from PyQt5.QtCore import Qt, QRectF, QPointF, QSize, QTimer, QThread, pyqtSignal
 from PyQt5.QtGui import QPainter, QPen, QBrush, QColor, QPixmap
 from PyQt5.QtWidgets import (QApplication, QWidget, QLabel, QFrame, QVBoxLayout,
@@ -127,16 +127,12 @@ class PageTitle(QWidget):
 
 
 class SessionsPage(QWidget):
-    ROWS = [
-        ("10:42 - 11:07", "00:24:51", "312", "634 dps", "High"),
-        ("10:15 - 10:38", "00:22:04", "271", "512 dps", "Medium"),
-        ("09:58 - 10:09", "00:11:37", "118", "488 dps", "Medium"),
-        ("09:31 - 09:52", "00:20:18", "204", "701 dps", "High"),
-        ("09:04 - 09:12", "00:08:40", "86", "356 dps", "Low"),
-    ]
+    """A log of real usage periods, built from the infrared presence flag."""
 
-    def __init__(self):
+    def __init__(self, log=None):
         super().__init__()
+        self.log = log
+        self._shown = -1
         lay = QVBoxLayout(self)
         lay.setContentsMargins(34, 26, 34, 24)
         lay.setSpacing(16)
@@ -145,63 +141,91 @@ class SessionsPage(QWidget):
         tiles = QHBoxLayout(); tiles.setSpacing(12)
         self.t_sess = StatTile(L("Sessions today"), "-", L("decided by the PIR sensor"))
         self.t_shots = StatTile(L("Total shots"), "-", L("trigger presses"))
-        self.t_peak = StatTile(L("Peak rate"), "-", L("range ±2000 dps"))
+        self.t_peak = StatTile(L("Peak rate"), "-", L("range +/-2000 dps"))
         self.t_temp = StatTile(L("Die temperature"), "-", L("on the MPU-6050"))
         for t in (self.t_sess, self.t_shots, self.t_peak, self.t_temp):
             t.setFixedHeight(84)
             tiles.addWidget(t)
         lay.addLayout(tiles)
 
-        # the summary must agree with the log below it, otherwise the page
-        # contradicts itself on screen
-        n = len(self.ROWS)
-        shots = sum(int(r[2]) for r in self.ROWS)
-        peak = max(int(r[3].split()[0]) for r in self.ROWS)
-        if i18n.current() == "zh":
-            self.t_sess.set_value("%d 个会话" % n)
-        else:
-            self.t_sess.set_value("%d session%s" % (n, "" if n == 1 else "s"))
-        self.t_shots.set_value("%d shots" % shots)
-        self.t_peak.set_value("%d dps" % peak)
-        self.t_temp.set_value("-")
+        self.card = Card(T.RADIUS_LG, T.SURFACE)
+        self.body = QVBoxLayout(self.card)
+        self.body.setContentsMargins(0, 8, 0, 8)
+        self.body.setSpacing(0)
+        lay.addWidget(self.card, 1)
 
-        card = Card(T.RADIUS_LG, T.SURFACE)
-        cl = QVBoxLayout(card)
-        cl.setContentsMargins(0, 8, 0, 8)
-        cl.setSpacing(0)
+        self.empty = Text(L("No usage recorded yet"), 10.5, False, T.ON_BG_LOW)
+        self.empty.setAlignment(Qt.AlignCenter)
+
+    def _header(self):
         head = QWidget(); hl = QHBoxLayout(head)
         hl.setContentsMargins(20, 6, 20, 10)
-        for w, s in ((150, L("Start")), (110, L("Duration")), (90, L("Shots")), (110, L("Peak rate")), (0, L("Intensity"))):
+        for w, s in ((150, L("Start")), (110, L("Duration")), (90, L("Shots")),
+                     (110, L("Peak rate")), (0, L("Intensity"))):
             lb = Text(s, 9.0, False, T.ON_BG_LOW)
             if w:
                 lb.setFixedWidth(w)
             hl.addWidget(lb)
         hl.addStretch(1)
-        cl.addWidget(head)
-        cl.addWidget(Divider())
-        for i, (a, b, c, d, e) in enumerate(self.ROWS):
-            rw = QWidget(); rl = QHBoxLayout(rw)
-            rl.setContentsMargins(20, 10, 20, 10)
-            for w, s, bold in ((150, a, False), (110, b, False), (90, c, False), (110, d, False)):
-                lb = Text(s, 10.0, bold, T.ON_BG)
-                lb.setFixedWidth(w)
-                rl.addWidget(lb)
-            col = {"High": T.ERROR, "Medium": T.WARN, "Low": T.SUCCESS}[e]
-            chip = QLabel(L(e))
-            chip.setAlignment(Qt.AlignCenter)
-            chip.setFixedSize(44, 20)
-            chip.setFont(app_font(9.0, True))
-            chip.setStyleSheet("color:%s;background:%s;border-radius:4px;" % (col, rgba(col, 0.16).name(QColor.HexArgb)))
-            rl.addWidget(chip)
-            rl.addStretch(1)
-            cl.addWidget(rw)
-            if i < len(self.ROWS) - 1:
-                cl.addWidget(Divider())
-        lay.addWidget(card, 1)
+        return head
+
+    def _row(self, start_s, dur_s, shots, peak, level):
+        rw = QWidget(); rl = QHBoxLayout(rw)
+        rl.setContentsMargins(20, 10, 20, 10)
+        for w, s in ((150, start_s), (110, dur_s), (90, str(shots)), (110, peak)):
+            lb = Text(s, 10.0, False, T.ON_BG)
+            lb.setFixedWidth(w)
+            rl.addWidget(lb)
+        col = {"High": T.ERROR, "Medium": T.WARN, "Low": T.SUCCESS}[level]
+        chip = QLabel(L(level))
+        chip.setAlignment(Qt.AlignCenter)
+        chip.setFixedSize(52, 20)
+        chip.setFont(app_font(9.0, True))
+        chip.setStyleSheet("color:%s;background:%s;border-radius:4px;"
+                           % (col, rgba(col, 0.16).name(QColor.HexArgb)))
+        rl.addWidget(chip)
+        rl.addStretch(1)
+        return rw
+
+    def _rebuild(self, rows):
+        while self.body.count():
+            it = self.body.takeAt(0)
+            w = it.widget()
+            if w is not None:
+                w.setParent(None)
+        self.body.addWidget(self._header())
+        self.body.addWidget(Divider())
+        if not rows:
+            self.body.addWidget(self.empty)
+            self.body.addStretch(1)
+            return
+        for i, r in enumerate(rows):
+            start = time.strftime("%H:%M", time.localtime(r.get("start", 0)))
+            dur = int(r.get("dur") or 0)
+            dur_s = "%02d:%02d" % (dur // 60, dur % 60)
+            shots = int(r.get("shots") or 0)
+            rate = int(shots * 60 / dur) if dur else shots
+            level = "High" if rate >= 20 else ("Medium" if rate >= 8 else "Low")
+            self.body.addWidget(self._row(start, dur_s, shots, "%d /min" % rate, level))
+            if i < len(rows) - 1:
+                self.body.addWidget(Divider())
+        self.body.addStretch(1)
 
     def update_data(self, d):
-        self.t_temp.set_value("%.1f °C" % (d.get("temp") or 0))
-
+        rows = []
+        if self.log is not None:
+            self.log.update(d)
+            rows = self.log.live()
+        n = len(rows)
+        shots = sum(int(r.get("shots") or 0) for r in rows)
+        self.t_sess.set_value("%d" % n if i18n.current() == "zh" else "%d session%s" % (n, "" if n == 1 else "s"))
+        self.t_shots.set_value("%d" % shots)
+        rates = [int(r.get("shots") or 0) * 60 / max(1, int(r.get("dur") or 1)) for r in rows]
+        self.t_peak.set_value("%d /min" % (max(rates) if rates else 0))
+        self.t_temp.set_value("%.1f \u00b0C" % (d.get("temp") or 0))
+        if n != self._shown:
+            self._shown = n
+            self._rebuild(rows)
 
 class CloudPage(QWidget):
     def __init__(self):
@@ -248,9 +272,8 @@ class CloudPage(QWidget):
         rl2.setSpacing(10)
         rl2.addWidget(Text(L("Yaw rate history (field 1)"), 11.0, True))
         sp = Sparkline(color=T.SECONDARY)
-        sp.synth(-62, 9, 6)
+        sp.clear()
         self.sp_rssi = sp
-        sp.synth(0, 6, 0.6)
         rl2.addWidget(sp, 1)
         rl2.addWidget(Text(L("one point per record, oldest on the left"), 9.0, False, T.ON_BG_LOW))
         body.addWidget(right, 1)
@@ -328,9 +351,14 @@ class ProfilesPage(QWidget):
 # ============ device detail ============
 
 class DeviceDetailPage(QWidget):
-    def __init__(self, on_back=None):
+    GEARS = {1: 9, 2: 18, 3: 36}
+
+    def __init__(self, on_back=None, on_config=None):
         super().__init__()
         self.on_back = on_back
+        self.on_config = on_config
+        self._cfg = {"gear": 2, "dz": 4, "lp": 35}
+        self._syncing = False
         root = QHBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
@@ -369,11 +397,12 @@ class DeviceDetailPage(QWidget):
         pl.setContentsMargins(22, 18, 22, 18)
         pl.setSpacing(16)
         pl.addWidget(Text(L("Gain curve"), 11.0, True))
-        for lab, lo, hi, v, u in ((L("Yaw gain (counts / degree)"), 3, 60, 18, ""),
-                                  (L("Pitch gain (counts / degree)"), 3, 60, 18, ""),
-                                  (L("Soft dead zone (dps x 10)"), 0, 20, 4, ""),
-                                  (L("Low-pass cutoff (Hz)"), 10, 60, 35, " Hz")):
-            pl.addWidget(SliderRow(lab, lo, hi, v, u))
+        self.sl_gear = SliderRow(L("Sensitivity (counts / degree)"), 1, 3, 2, "",
+                                 self._changed, self._gear_text)
+        self.sl_dz = SliderRow(L("Soft dead zone (dps x 10)"), 0, 20, 4, "", self._changed)
+        self.sl_lp = SliderRow(L("Low-pass cutoff (Hz)"), 10, 60, 35, " Hz", self._changed)
+        for w in (self.sl_gear, self.sl_dz, self.sl_lp):
+            pl.addWidget(w)
         bl2.addWidget(panel)
 
         canvas = Card(T.RADIUS_LG, T.SURFACE)
@@ -382,11 +411,34 @@ class DeviceDetailPage(QWidget):
         cl.setSpacing(8)
         cl.addWidget(Text(L("Live angular rate (DpiCanvas)"), 11.0, True))
         sp = Sparkline(color=T.PRIMARY)
-        sp.synth(0, 120, 26)
+        sp.clear()
         self.sp_live = sp
         cl.addWidget(sp, 1)
         bl2.addWidget(canvas, 1)
         root.addWidget(body, 1)
+
+    def _gear_text(self, v):
+        return "%d c/deg" % self.GEARS.get(int(v), 18)
+
+    def _changed(self, _v=None):
+        if self._syncing:
+            return
+        self._cfg = {"gear": self.sl_gear.get_value(),
+                     "dz": self.sl_dz.get_value(),
+                     "lp": self.sl_lp.get_value()}
+        if self.on_config:
+            self.on_config(self._cfg["gear"], self._cfg["dz"], self._cfg["lp"])
+
+    def set_config(self, gear, dz, lp):
+        """Reflect the values the device reported, without echoing them back."""
+        self._syncing = True
+        try:
+            self.sl_gear.set_value(gear)
+            self.sl_dz.set_value(dz)
+            self.sl_lp.set_value(lp)
+            self._cfg = {"gear": int(gear), "dz": int(dz), "lp": int(lp)}
+        finally:
+            self._syncing = False
 
     def update_data(self, d):
         self.sp_live.push(float(d.get("gz") or 0.0))
@@ -552,11 +604,13 @@ class MainWindow(QWidget):
         self.resize(1030, 768)
         self.setAttribute(Qt.WA_StyledBackground, False)
 
-        self.detail = DeviceDetailPage(on_back=self.close_detail)
+        self.session_log = datamod.SessionLog()
+        self.detail = DeviceDetailPage(on_back=self.close_detail,
+                                       on_config=self.send_config)
         self.stack = QStackedWidget()
         self.pages = {
             "Devices": DevicesPage(on_open=self.open_detail),
-            "Sessions": SessionsPage(),
+            "Sessions": SessionsPage(log=self.session_log),
             "Cloud": CloudPage(),
             "Profiles": ProfilesPage(on_send=self.send_profile),
         }
@@ -590,6 +644,9 @@ class MainWindow(QWidget):
                 self.restart = True
                 self.close()
 
+    def send_config(self, gear, dz, lp):
+        self.send_profile("#CFG %d %d %d" % (gear, dz, lp))
+
     def send_profile(self, cmd):
         self.status.set_text("%s  →  sending" % (cmd,))
         self._sender = Sender(self.source, cmd, self)
@@ -611,6 +668,14 @@ class MainWindow(QWidget):
         self._apply(d or {})
 
     def _apply(self, d):
+        note = getattr(self.source, "note", "") or ""
+        if note.startswith("device: CFG"):
+            p = note.split()
+            if len(p) >= 5:
+                try:
+                    self.detail.set_config(int(p[2]), int(p[3]), int(p[4]))
+                except Exception:
+                    pass
         if d.get("_error"):
             self.status.set_text(L("source error: %s") % (d["_error"],))
             return
