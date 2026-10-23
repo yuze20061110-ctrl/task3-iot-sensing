@@ -227,6 +227,32 @@ class SessionsPage(QWidget):
             self._shown = n
             self._rebuild(rows)
 
+class ChannelWorker(QThread):
+    """Polls the ThingSpeak channel so the Cloud page shows a live link."""
+
+    done = pyqtSignal(object)
+
+    def __init__(self, probe, every=5.0, parent=None):
+        super().__init__(parent)
+        self.probe = probe
+        self.every = every
+        self._stop = False
+
+    def run(self):
+        while not self._stop:
+            try:
+                self.done.emit(self.probe.check())
+            except Exception as e:
+                self.done.emit({'ok': False, 'code': 0, 'ms': 0, 'rows': 0,
+                                'last_at': '', 'err': repr(e)})
+            for _ in range(int(self.every * 10)):
+                if self._stop:
+                    return
+                self.msleep(100)
+
+    def stop(self):
+        self._stop = True
+
 class CloudPage(QWidget):
     def __init__(self):
         super().__init__()
@@ -236,14 +262,20 @@ class CloudPage(QWidget):
         lay.addWidget(PageTitle(L("Cloud"), L("ThingSpeak channel · uplink telemetry and downlink commands")))
 
         tiles = QHBoxLayout(); tiles.setSpacing(12)
-        self.t_state = StatTile(L("Channel"), "-", "ThingSpeak")
-        self.t_up = StatTile(L("Records"), "-", L("rows read from the channel"))
+        self.t_state = StatTile(L("Channel"), THINGSPEAK["channel"], "ThingSpeak")
+        self.t_link = StatTile(L("Link"), "-", L("checked every 5 s"))
+        self.t_ms = StatTile(L("Latency"), "-", L("round trip to the channel"))
+        self.t_up = StatTile(L("Records"), "-", L("entries on the channel"))
         self.t_last = StatTile(L("Last record"), "-", L("UTC timestamp"))
-        self.t_ratio = StatTile(L("Packing"), "15:1", L("15 samples packed per field"))
-        for t in (self.t_state, self.t_up, self.t_last, self.t_ratio):
+        for t in (self.t_state, self.t_link, self.t_ms, self.t_up, self.t_last):
             t.setFixedHeight(84)
             tiles.addWidget(t)
         lay.addLayout(tiles)
+
+        self.probe = datamod.ChannelProbe(THINGSPEAK["channel"], THINGSPEAK["read_key"])
+        self.worker = ChannelWorker(self.probe, 5.0, self)
+        self.worker.done.connect(self._on_probe)
+        self.worker.start()
 
         body = QHBoxLayout(); body.setSpacing(12)
 
@@ -280,13 +312,26 @@ class CloudPage(QWidget):
 
         lay.addLayout(body, 1)
 
+    def _on_probe(self, res):
+        if res.get("ok"):
+            code = res.get("code") or 0
+            self.t_link.set_value(("200 OK" if code == 200 else str(code)))
+            self.t_ms.set_value("%d ms" % res.get("ms", 0))
+            self.t_up.set_value("%d" % (res.get("rows") or 0))
+            at = res.get("last_at") or ""
+            self.t_last.set_value(at[11:19] + " UTC" if len(at) > 18 else "-")
+        else:
+            self.t_link.set_value(L("unreachable"))
+            self.t_ms.set_value("%d ms" % res.get("ms", 0))
+
+    def stop(self):
+        try:
+            self.worker.stop()
+            self.worker.wait(1500)
+        except Exception:
+            pass
+
     def update_data(self, d):
-        net = (d.get("net") or "off")
-        self.t_state.set_value({"cloud": "connected", "serial": "serial",
-                                "mock": "synthetic", "off": "unconfigured"}.get(net, net))
-        self.t_up.set_value("%d" % (d.get("rows") or 0))
-        at = (d.get("at") or "")
-        self.t_last.set_value(at[11:19] if len(at) > 18 else "-")
         self.sp_rssi.push(float(d.get("gz") or 0.0))
 
 
@@ -697,6 +742,10 @@ class MainWindow(QWidget):
                 self.status.set_text(L("update_data failed: %r") % (e,))
 
     def closeEvent(self, e):
+        try:
+            self.pages["Cloud"].stop()
+        except Exception:
+            pass
         try:
             self.poller.stop()
             self.poller.wait(1500)
