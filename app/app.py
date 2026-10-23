@@ -580,13 +580,26 @@ class StatusBar(QWidget):
         self.setFixedHeight(T.STATUS_H)
         self.setStyleSheet("background:%s;" % T.STATUSBAR)
         lay = QHBoxLayout(self)
-        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setContentsMargins(14, 0, 14, 0)
+        lay.setSpacing(10)
+        self.pres = Text(L("PIR") + " \u25cb", 10.0, True, T.ON_BG_LOW)
+        self.pres.setFixedWidth(58)
+        lay.addWidget(self.pres)
         self.lb = Text(text, 10.0)
         self.lb.setAlignment(Qt.AlignCenter)
-        lay.addWidget(self.lb)
+        lay.addWidget(self.lb, 1)
+        self._on = None
 
     def set_text(self, t):
         self.lb.setText(t)
+
+    def set_presence(self, on):
+        on = bool(on)
+        if on == self._on:
+            return
+        self._on = on
+        self.pres.setText(L("PIR") + (" \u25cf" if on else " \u25cb"))
+        self.pres.setStyleSheet("color:%s;" % (T.SUCCESS if on else T.ON_BG_LOW))
 
 
 class Poller(QThread):
@@ -752,11 +765,11 @@ class MainWindow(QWidget):
         if not d:
             self.status.set_text("%s  ·  %s" % (self.source.name, self.source.note))
             return
+        self.status.set_presence(d.get("present"))
         self.status.set_text(
-            "%s  ·  \u0394gz %+.1f dps  \u00b7  %.1f\u00b0C  \u00b7  %d shots  \u00b7  PIR %s  \u00b7  %s"
+            "%s  \u00b7  \u0394gz %+.1f dps  \u00b7  %.1f\u00b0C  \u00b7  %d shots  \u00b7  %s"
             % (self.source.name, d.get("gz", 0.0), d.get("temp", 0.0),
-               d.get("shots", 0), "\u25cf" if d.get("present") else "\u25cb",
-               self.source.note))
+               d.get("shots", 0), self.source.note))
         w = self.content.currentWidget()
         if w is self.stack:
             w = self.stack.currentWidget()
