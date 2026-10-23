@@ -189,6 +189,8 @@ class NavTab(QWidget):
         self.name = name
         self.active = active
         self.setCursor(Qt.PointingHandCursor)
+        self.setAttribute(Qt.WA_Hover, True)
+        self._hover = False
         self.setFont(app_font(10.5))
         fm = QFontMetrics(app_font(10.5))
         self.setFixedSize(fm.horizontalAdvance(name) + 6, T.HEADER_H)
@@ -197,12 +199,26 @@ class NavTab(QWidget):
         self.active = v
         self.update()
 
+    def enterEvent(self, e):
+        self._hover = True
+        self.update()
+
+    def leaveEvent(self, e):
+        self._hover = False
+        self.update()
+
     def mousePressEvent(self, e):
         self.clicked.emit(self.name)
 
     def paintEvent(self, e):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing, True)
+        if self._hover:
+            # a light chip behind the label is what tells the user it is clickable
+            p.setPen(Qt.NoPen)
+            p.setBrush(QBrush(rgba(T.ON_BG, 0.11)))
+            p.drawRoundedRect(
+                QRectF(0, (self.height() - 30) / 2.0, self.width(), 30), 6, 6)
         p.setFont(self.font())
         col = T.PRIMARY if self.active else T.NAV_IDLE
         p.setPen(QPen(QColor(col)))
@@ -225,11 +241,21 @@ class SubNavItem(QWidget):
         self.name = name
         self.active = active
         self.setCursor(Qt.PointingHandCursor)
+        self.setAttribute(Qt.WA_Hover, True)
+        self._hover = False
         self.setFont(app_font(10.5))
         self.setFixedHeight(38)
 
     def set_active(self, v):
         self.active = v
+        self.update()
+
+    def enterEvent(self, e):
+        self._hover = True
+        self.update()
+
+    def leaveEvent(self, e):
+        self._hover = False
         self.update()
 
     def mousePressEvent(self, e):
@@ -238,6 +264,10 @@ class SubNavItem(QWidget):
     def paintEvent(self, e):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing, True)
+        if self._hover and not self.active:
+            p.setPen(Qt.NoPen)
+            p.setBrush(QBrush(rgba(T.ON_BG, 0.11)))
+            p.drawRoundedRect(QRectF(0, 0, self.width(), self.height()), 6, 6)
         if self.active:
             p.setPen(Qt.NoPen)
             p.setBrush(QBrush(rgba(T.ON_BG, 0.06)))
