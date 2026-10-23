@@ -1,5 +1,5 @@
 import sys, os
-from PyQt5.QtCore import Qt, QRectF, QPointF, QSize, QTimer
+from PyQt5.QtCore import Qt, QRectF, QPointF, QSize, QTimer, QThread, pyqtSignal
 from PyQt5.QtGui import QPainter, QPen, QBrush, QColor, QPixmap
 from PyQt5.QtWidgets import (QApplication, QWidget, QLabel, QFrame, QVBoxLayout,
                              QHBoxLayout, QStackedWidget, QSizePolicy, QPushButton)
@@ -437,6 +437,56 @@ class StatusBar(QWidget):
         self.lb.setText(t)
 
 
+class Poller(QThread):
+    """Runs source.poll() off the GUI thread.
+
+    The ThingSpeak source performs a blocking HTTPS request inside poll().  Calling
+    it from the timer callback froze the window for the length of the request, which
+    is what made the interface feel slow.  The worker owns the poll and hands the
+    result back through a signal, so the event loop never waits on the network.
+    """
+
+    done = pyqtSignal(object)
+
+    def __init__(self, source, parent=None):
+        super().__init__(parent)
+        self.source = source
+        self._stop = False
+
+    def run(self):
+        while not self._stop:
+            try:
+                d = self.source.poll()
+                self.done.emit(d or {})
+            except Exception as e:
+                self.done.emit({"_error": repr(e)})
+            for _ in range(10):
+                if self._stop:
+                    return
+                self.msleep(100)
+
+    def stop(self):
+        self._stop = True
+
+
+class Sender(QThread):
+    """One-shot worker for a profile write, which is also a network request."""
+
+    done = pyqtSignal(str, str)
+
+    def __init__(self, source, cmd, parent=None):
+        super().__init__(parent)
+        self.source = source
+        self.cmd = cmd
+
+    def run(self):
+        try:
+            res = self.source.send(self.cmd)
+        except Exception as e:
+            res = "send failed: %r" % (e,)
+        self.done.emit(self.cmd, res)
+
+
 class MainWindow(QWidget):
     def __init__(self, source=None):
         super().__init__()
@@ -459,9 +509,9 @@ class MainWindow(QWidget):
         self.source = source if source is not None else default_source()
         self.header = Header(self.on_nav)
         self.status = StatusBar("source: %s" % self.source.name)
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self._tick)
-        self.timer.start(1000)
+        self.poller = Poller(self.source, self)
+        self.poller.done.connect(self._apply)
+        self.poller.start()
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -474,18 +524,28 @@ class MainWindow(QWidget):
         root.addWidget(self.status)
 
     def send_profile(self, cmd):
-        try:
-            res = self.source.send(cmd)
-        except Exception as e:
-            res = "send failed: %r" % (e,)
+        self.status.set_text("%s  →  sending" % (cmd,))
+        self._sender = Sender(self.source, cmd, self)
+        self._sender.done.connect(self._on_sent)
+        self._sender.start()
+
+    def _on_sent(self, cmd, res):
         self.status.set_text("%s  →  %s" % (cmd, res))
         self.profile_flash = res
 
     def _tick(self):
+        """One synchronous poll.  Kept for the screenshot scripts only; the running
+        application uses the Poller thread so the window never waits on the network."""
         try:
             d = self.source.poll()
         except Exception as e:
             self.status.set_text("source error: %r" % (e,))
+            return
+        self._apply(d or {})
+
+    def _apply(self, d):
+        if d.get("_error"):
+            self.status.set_text("source error: %s" % (d["_error"],))
             return
         if not d:
             self.status.set_text("%s  ·  %s" % (self.source.name, self.source.note))
@@ -503,6 +563,14 @@ class MainWindow(QWidget):
                 fn(d)
             except Exception as e:
                 self.status.set_text("update_data failed: %r" % (e,))
+
+    def closeEvent(self, e):
+        try:
+            self.poller.stop()
+            self.poller.wait(1500)
+        except Exception:
+            pass
+        super().closeEvent(e)
 
     def paintEvent(self, e):
         p = QPainter(self)
