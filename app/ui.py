@@ -4,6 +4,9 @@ from PyQt5.QtGui import QPainter, QPen, QBrush, QColor, QFont, QFontMetrics, QPi
 from PyQt5.QtWidgets import QWidget, QLabel, QFrame, QPushButton, QHBoxLayout, QVBoxLayout, QSlider
 
 import tokens as T
+import i18n
+
+L = i18n.L
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -222,7 +225,7 @@ class NavTab(QWidget):
         p.setFont(self.font())
         col = T.PRIMARY if self.active else T.NAV_IDLE
         p.setPen(QPen(QColor(col)))
-        p.drawText(self.rect(), Qt.AlignCenter, self.name)
+        p.drawText(self.rect(), Qt.AlignCenter, L(self.name))
         if self.active:
             fm = QFontMetrics(self.font())
             w = fm.horizontalAdvance(self.name) + 4
@@ -276,7 +279,7 @@ class SubNavItem(QWidget):
             p.drawRoundedRect(QRectF(0, 10, 2.5, self.height() - 20), 1.2, 1.2)
         p.setFont(self.font())
         p.setPen(QPen(QColor(T.ON_BG if self.active else T.NAV_IDLE)))
-        p.drawText(QRectF(14, 0, self.width() - 20, self.height()), Qt.AlignVCenter | Qt.AlignLeft, self.name)
+        p.drawText(QRectF(14, 0, self.width() - 20, self.height()), Qt.AlignVCenter | Qt.AlignLeft, L(self.name))
         p.end()
 
 
