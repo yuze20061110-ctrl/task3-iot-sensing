@@ -41,6 +41,12 @@ ZH = {
     "ThingSpeak channel · uplink telemetry and downlink commands":
         "ThingSpeak 通道 · 上行遥测与下行指令",
     "Channel": "通道",
+    "Link": "链路",
+    "Latency": "延迟",
+    "checked every 5 s": "每 5 秒探测一次",
+    "round trip to the channel": "到通道的往返耗时",
+    "entries on the channel": "通道中的条目数",
+    "unreachable": "无法连接",
     "Records": "记录数",
     "rows read from the channel": "从通道读取的行数",
     "Last record": "最新记录",
