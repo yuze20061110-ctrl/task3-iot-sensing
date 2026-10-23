@@ -9,7 +9,7 @@ cares) where a reading came from:
 
 Every source exposes .poll() -> dict and keeps .history (last 240 readings).
 """
-import json, math, time, random
+import json, math, os, time, random
 
 try:
     import urllib.request as _urlreq
@@ -285,6 +285,60 @@ class SerialSource(Source):
         except Exception:
             pass
 
+
+class SessionLog(object):
+    """Turns the presence flag into a log of usage periods.
+
+    A period opens when the infrared sensor first sees the operator and closes
+    when it loses them, so every row is one real engagement.
+    """
+
+    def __init__(self, path=None):
+        self.path = path or os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), 'sessions.json')
+        self.rows = []
+        self.open_row = None
+        self._load()
+
+    def _load(self):
+        try:
+            with open(self.path, 'r', encoding='utf-8') as f:
+                self.rows = json.load(f).get('rows', [])[-200:]
+        except Exception:
+            self.rows = []
+
+    def _save(self):
+        try:
+            with open(self.path, 'w', encoding='utf-8') as f:
+                json.dump({'rows': self.rows[-200:]}, f)
+        except Exception:
+            pass
+
+    def update(self, d):
+        present = int(d.get('present') or 0)
+        shots = int(d.get('shots') or 0)
+        now = time.time()
+        if present and self.open_row is None:
+            self.open_row = {'start': now, 'shots': shots, 'dur': 0, 'live': 1}
+        elif present and self.open_row is not None:
+            self.open_row['shots'] = shots
+            secs = int(d.get('session_s') or 0)
+            if secs:
+                self.open_row['dur'] = secs
+        elif not present and self.open_row is not None:
+            row = self.open_row
+            row.pop('live', None)
+            row['dur'] = row.get('dur') or int(now - row['start'])
+            self.rows.append(row)
+            self.open_row = None
+            self._save()
+        return self.rows
+
+    def live(self):
+        rows = list(self.rows)
+        if self.open_row is not None:
+            rows = rows + [dict(self.open_row)]
+        return rows
 
 def make_source(kind="mock", **kw):
     kind = (kind or "mock").lower()
