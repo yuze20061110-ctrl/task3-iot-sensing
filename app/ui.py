@@ -291,8 +291,10 @@ class Divider(QFrame):
 
 
 class SliderRow(QWidget):
-    def __init__(self, label, lo, hi, val, unit="", parent=None):
+    def __init__(self, label, lo, hi, val, unit="", on_change=None, fmt=None, parent=None):
         super().__init__(parent)
+        self.fmt = fmt
+        self.on_change = on_change
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(6)
@@ -313,8 +315,27 @@ class SliderRow(QWidget):
             QSlider::sub-page:horizontal{height:4px;background:%s;border-radius:2px;}
             QSlider::handle:horizontal{width:14px;height:14px;margin:-5px 0;border-radius:7px;background:#fff;}
         """ % (qss(T.OUTLINE_HI), T.PRIMARY))
-        self.s.valueChanged.connect(lambda v: self.value.setText("%d%s" % (v, self.unit)))
+        self.s.valueChanged.connect(self._on_value)
         lay.addWidget(self.s)
+
+    def _text(self, v):
+        if self.fmt:
+            return self.fmt(v)
+        return "%d%s" % (v, self.unit)
+
+    def _on_value(self, v):
+        self.value.setText(self._text(v))
+        if self.on_change:
+            self.on_change(v)
+
+    def get_value(self):
+        return self.s.value()
+
+    def set_value(self, v):
+        self.s.blockSignals(True)
+        self.s.setValue(int(v))
+        self.value.setText(self._text(int(v)))
+        self.s.blockSignals(False)
 
 
 class Sparkline(QWidget):
@@ -330,6 +351,10 @@ class Sparkline(QWidget):
         self.data.append(v)
         if len(self.data) > self.n:
             self.data.pop(0)
+        self.update()
+
+    def clear(self):
+        self.data = []
         self.update()
 
     def synth(self, base, amp, noise, phase=0.0):
