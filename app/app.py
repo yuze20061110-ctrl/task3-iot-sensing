@@ -212,10 +212,7 @@ class SessionsPage(QWidget):
         self.body.addStretch(1)
 
     def update_data(self, d):
-        rows = []
-        if self.log is not None:
-            self.log.update(d)
-            rows = self.log.live()
+        rows = self.log.live() if self.log is not None else []
         n = len(rows)
         shots = sum(int(r.get("shots") or 0) for r in rows)
         self.t_sess.set_value("%d" % n if i18n.current() == "zh" else "%d session%s" % (n, "" if n == 1 else "s"))
@@ -669,6 +666,10 @@ class MainWindow(QWidget):
         self.poller = Poller(self.source, self)
         self.poller.done.connect(self._apply)
         self.poller.start()
+        if self.source.name != "serial":
+            self.watchdog = QTimer(self)
+            self.watchdog.timeout.connect(self._watch_source)
+            self.watchdog.start(3000)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -688,6 +689,26 @@ class MainWindow(QWidget):
                 i18n.set_lang(code)
                 self.restart = True
                 self.close()
+
+    def _watch_source(self):
+        """Switch to the board as soon as it is plugged in."""
+        if self.source.name == "serial":
+            self.watchdog.stop()
+            return
+        port = datamod.find_pico_port()
+        if not port:
+            return
+        self.watchdog.stop()
+        try:
+            self.poller.stop()
+            self.poller.wait(1500)
+        except Exception:
+            pass
+        self.source = datamod.make_source("serial", port=port)
+        self.status.set_text(L("source: %s") % self.source.name)
+        self.poller = Poller(self.source, self)
+        self.poller.done.connect(self._apply)
+        self.poller.start()
 
     def send_config(self, gear, dz, lp):
         self.send_profile("#CFG %d %d %d" % (gear, dz, lp))
@@ -713,6 +734,10 @@ class MainWindow(QWidget):
         self._apply(d or {})
 
     def _apply(self, d):
+        try:
+            self.session_log.update(d)
+        except Exception:
+            pass
         note = getattr(self.source, "note", "") or ""
         if note.startswith("device: CFG"):
             p = note.split()
@@ -728,9 +753,10 @@ class MainWindow(QWidget):
             self.status.set_text("%s  ·  %s" % (self.source.name, self.source.note))
             return
         self.status.set_text(
-            "%s  ·  \u0394gz %+.1f dps  \u00b7  %.1f\u00b0C  \u00b7  %d shots  \u00b7  %s"
+            "%s  ·  \u0394gz %+.1f dps  \u00b7  %.1f\u00b0C  \u00b7  %d shots  \u00b7  PIR %s  \u00b7  %s"
             % (self.source.name, d.get("gz", 0.0), d.get("temp", 0.0),
-               d.get("shots", 0), self.source.note))
+               d.get("shots", 0), "\u25cf" if d.get("present") else "\u25cb",
+               self.source.note))
         w = self.content.currentWidget()
         if w is self.stack:
             w = self.stack.currentWidget()
