@@ -255,6 +255,12 @@ class SerialSource(Source):
         *lines, self._buf = text.split("\n")
         for ln in lines:
             ln = ln.strip()
+            if ln.startswith("#PIR"):
+                try:
+                    self.latest["present"] = int(ln[5:].strip() or 0)
+                except Exception:
+                    pass
+                continue
             if ln.startswith("#ACK"):
                 import time as _t
                 self.note = "device: " + ln[5:].strip()
