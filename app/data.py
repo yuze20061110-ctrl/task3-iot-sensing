@@ -286,6 +286,41 @@ class SerialSource(Source):
             pass
 
 
+class ChannelProbe(object):
+    """Times one real request against the channel.
+
+    The Cloud page calls check() from a worker thread, so what it shows is the
+    HTTP status and round-trip delay of the channel itself, not a guess.
+    """
+
+    def __init__(self, channel, read_key='', timeout=8):
+        self.channel = channel
+        self.read_key = read_key
+        self.timeout = timeout
+
+    def check(self):
+        if _urlreq is None:
+            return {'ok': False, 'code': 0, 'ms': 0, 'rows': 0, 'last_at': '', 'err': 'no urllib'}
+        url = ('https://api.thingspeak.com/channels/%s/feeds.json?api_key=%s&results=1'
+               % (self.channel, self.read_key))
+        t0 = time.time()
+        try:
+            with _urlreq.urlopen(url, timeout=self.timeout) as r:
+                code = getattr(r, 'status', 0) or 0
+                body = r.read()
+            ms = int((time.time() - t0) * 1000)
+            d = json.loads(body.decode())
+            ch = d.get('channel') or {}
+            feeds = d.get('feeds') or []
+            last = feeds[-1].get('created_at', '') if feeds else ''
+            return {'ok': True, 'code': code, 'ms': ms,
+                    'rows': int(ch.get('last_entry_id') or len(feeds)),
+                    'last_at': last, 'err': ''}
+        except Exception as e:
+            ms = int((time.time() - t0) * 1000)
+            return {'ok': False, 'code': 0, 'ms': ms, 'rows': 0,
+                    'last_at': '', 'err': str(e)[:70]}
+
 class SessionLog(object):
     """Turns the presence flag into a log of usage periods.
 
