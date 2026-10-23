@@ -2,11 +2,14 @@ import sys, os
 from PyQt5.QtCore import Qt, QRectF, QPointF, QSize, QTimer, QThread, pyqtSignal
 from PyQt5.QtGui import QPainter, QPen, QBrush, QColor, QPixmap
 from PyQt5.QtWidgets import (QApplication, QWidget, QLabel, QFrame, QVBoxLayout,
-                             QHBoxLayout, QStackedWidget, QSizePolicy, QPushButton)
+                             QHBoxLayout, QStackedWidget, QSizePolicy, QPushButton, QDialog, QComboBox)
 
 import tokens as T
 import ui
 import data as datamod
+import i18n
+
+L = i18n.L
 from ui import (PaintWidget, IconButton, Text, Card, NavTab, SubNavItem, Divider,
                 SliderRow, Sparkline, StatTile, app_font, rgba,
                 i_gear, i_user, i_desktop, i_grid, i_list, i_crosshair,
@@ -137,13 +140,13 @@ class SessionsPage(QWidget):
         lay = QVBoxLayout(self)
         lay.setContentsMargins(34, 26, 34, 24)
         lay.setSpacing(16)
-        lay.addWidget(PageTitle("Sessions", "Every engagement the infrared sensor recorded"))
+        lay.addWidget(PageTitle(L("Sessions"), L("Every engagement the infrared sensor recorded")))
 
         tiles = QHBoxLayout(); tiles.setSpacing(12)
-        self.t_sess = StatTile("Sessions today", "-", "decided by the PIR sensor")
-        self.t_shots = StatTile("Total shots", "-", "trigger presses")
-        self.t_peak = StatTile("Peak rate", "-", "range ±2000 dps")
-        self.t_temp = StatTile("Die temperature", "-", "on the MPU-6500")
+        self.t_sess = StatTile(L("Sessions today"), "-", L("decided by the PIR sensor"))
+        self.t_shots = StatTile(L("Total shots"), "-", L("trigger presses"))
+        self.t_peak = StatTile(L("Peak rate"), "-", L("range ±2000 dps"))
+        self.t_temp = StatTile(L("Die temperature"), "-", L("on the MPU-6050"))
         for t in (self.t_sess, self.t_shots, self.t_peak, self.t_temp):
             t.setFixedHeight(84)
             tiles.addWidget(t)
@@ -154,7 +157,10 @@ class SessionsPage(QWidget):
         n = len(self.ROWS)
         shots = sum(int(r[2]) for r in self.ROWS)
         peak = max(int(r[3].split()[0]) for r in self.ROWS)
-        self.t_sess.set_value("%d session%s" % (n, "" if n == 1 else "s"))
+        if i18n.current() == "zh":
+            self.t_sess.set_value("%d 个会话" % n)
+        else:
+            self.t_sess.set_value("%d session%s" % (n, "" if n == 1 else "s"))
         self.t_shots.set_value("%d shots" % shots)
         self.t_peak.set_value("%d dps" % peak)
         self.t_temp.set_value("-")
@@ -165,7 +171,7 @@ class SessionsPage(QWidget):
         cl.setSpacing(0)
         head = QWidget(); hl = QHBoxLayout(head)
         hl.setContentsMargins(20, 6, 20, 10)
-        for w, s in ((150, "Start"), (110, "Duration"), (90, "Shots"), (110, "Peak rate"), (0, "Intensity")):
+        for w, s in ((150, L("Start")), (110, L("Duration")), (90, L("Shots")), (110, L("Peak rate")), (0, L("Intensity"))):
             lb = Text(s, 9.0, False, T.ON_BG_LOW)
             if w:
                 lb.setFixedWidth(w)
@@ -181,7 +187,7 @@ class SessionsPage(QWidget):
                 lb.setFixedWidth(w)
                 rl.addWidget(lb)
             col = {"High": T.ERROR, "Medium": T.WARN, "Low": T.SUCCESS}[e]
-            chip = QLabel(e)
+            chip = QLabel(L(e))
             chip.setAlignment(Qt.AlignCenter)
             chip.setFixedSize(44, 20)
             chip.setFont(app_font(9.0, True))
@@ -203,13 +209,13 @@ class CloudPage(QWidget):
         lay = QVBoxLayout(self)
         lay.setContentsMargins(34, 26, 34, 24)
         lay.setSpacing(16)
-        lay.addWidget(PageTitle("Cloud", "ThingSpeak channel · uplink telemetry and downlink commands"))
+        lay.addWidget(PageTitle(L("Cloud"), L("ThingSpeak channel · uplink telemetry and downlink commands")))
 
         tiles = QHBoxLayout(); tiles.setSpacing(12)
-        self.t_state = StatTile("Channel", "-", "ThingSpeak")
-        self.t_up = StatTile("Records", "-", "rows read from the channel")
-        self.t_last = StatTile("Last record", "-", "UTC timestamp")
-        self.t_ratio = StatTile("Packing", "15:1", "15 samples packed per field")
+        self.t_state = StatTile(L("Channel"), "-", "ThingSpeak")
+        self.t_up = StatTile(L("Records"), "-", L("rows read from the channel"))
+        self.t_last = StatTile(L("Last record"), "-", L("UTC timestamp"))
+        self.t_ratio = StatTile(L("Packing"), "15:1", L("15 samples packed per field"))
         for t in (self.t_state, self.t_up, self.t_last, self.t_ratio):
             t.setFixedHeight(84)
             tiles.addWidget(t)
@@ -221,7 +227,7 @@ class CloudPage(QWidget):
         ll = QVBoxLayout(left)
         ll.setContentsMargins(20, 16, 20, 16)
         ll.setSpacing(10)
-        ll.addWidget(Text("Field map", 11.0, True))
+        ll.addWidget(Text(L("Field map"), 11.0, True))
         for f, name in (("field1", "Yaw rate gz (dps)"), ("field2", "Pitch rate gy (dps)"),
                         ("field3", "Temperature (°C)"), ("field4", "Trigger count"),
                         ("field5", "Operator present (0/1)"), ("field6", "Session length (s)"),
@@ -230,7 +236,7 @@ class CloudPage(QWidget):
             rl.setContentsMargins(0, 0, 0, 0)
             k = Text(f, 9.5, True, T.PRIMARY); k.setFixedWidth(58)
             rl.addWidget(k)
-            rl.addWidget(Text(name, 9.5, False, T.ON_BG))
+            rl.addWidget(Text(L(name), 9.5, False, T.ON_BG))
             rl.addStretch(1)
             ll.addWidget(rw)
         ll.addStretch(1)
@@ -240,13 +246,13 @@ class CloudPage(QWidget):
         rl2 = QVBoxLayout(right)
         rl2.setContentsMargins(20, 16, 20, 16)
         rl2.setSpacing(10)
-        rl2.addWidget(Text("Yaw rate history (field 1)", 11.0, True))
+        rl2.addWidget(Text(L("Yaw rate history (field 1)"), 11.0, True))
         sp = Sparkline(color=T.SECONDARY)
         sp.synth(-62, 9, 6)
         self.sp_rssi = sp
         sp.synth(0, 6, 0.6)
         rl2.addWidget(sp, 1)
-        rl2.addWidget(Text("one point per record, oldest on the left", 9.0, False, T.ON_BG_LOW))
+        rl2.addWidget(Text(L("one point per record, oldest on the left"), 9.0, False, T.ON_BG_LOW))
         body.addWidget(right, 1)
 
         lay.addLayout(body, 1)
@@ -287,7 +293,7 @@ class ProfilesPage(QWidget):
         lay = QVBoxLayout(self)
         lay.setContentsMargins(34, 26, 34, 24)
         lay.setSpacing(16)
-        lay.addWidget(PageTitle("Profiles", "Local JSON · pushed to the device, mirrored to the cloud"))
+        lay.addWidget(PageTitle(L("Profiles"), L("Local JSON · pushed to the device, mirrored to the cloud")))
 
         grid = QHBoxLayout(); grid.setSpacing(12)
         for name, desc, active, cmd in self.DATA:
@@ -297,10 +303,10 @@ class ProfilesPage(QWidget):
             cl.setContentsMargins(18, 16, 18, 14)
             cl.setSpacing(8)
             top = QHBoxLayout(); top.setContentsMargins(0, 0, 0, 0)
-            top.addWidget(Text(name, 12.0, True))
+            top.addWidget(Text(L(name), 12.0, True))
             top.addStretch(1)
             if active:
-                chip = QLabel("In use")
+                chip = QLabel(L("In use"))
                 chip.setAlignment(Qt.AlignCenter)
                 chip.setFixedSize(52, 20)
                 chip.setFont(app_font(9.0, True))
@@ -308,9 +314,9 @@ class ProfilesPage(QWidget):
                                    % (T.PRIMARY, rgba(T.PRIMARY, 0.16).name(QColor.HexArgb)))
                 top.addWidget(chip)
             cl.addLayout(top)
-            cl.addWidget(Text(desc, 9.5, False, T.ON_BG_MED))
+            cl.addWidget(Text(L(desc), 9.5, False, T.ON_BG_MED))
             cl.addStretch(1)
-            btn = ProtoButton("Send to device")
+            btn = ProtoButton(L("Send to device"))
             btn.clicked.connect(lambda _=False, c=cmd: self.on_send and self.on_send(c))
             cl.addWidget(btn)
             grid.addWidget(c)
@@ -340,7 +346,7 @@ class DeviceDetailPage(QWidget):
         if on_back:
             bb.clicked.connect(on_back)
         bl.addWidget(bb)
-        bl.addWidget(Text("Back to devices", 9.5, False, T.ON_BG_MED))
+        bl.addWidget(Text(L("Back to devices"), 9.5, False, T.ON_BG_MED))
         bl.addStretch(1)
         sl.addWidget(back)
 
@@ -356,17 +362,17 @@ class DeviceDetailPage(QWidget):
         bl2 = QVBoxLayout(body)
         bl2.setContentsMargins(8, 26, 34, 24)
         bl2.setSpacing(14)
-        bl2.addWidget(PageTitle("Sensitivity", "DpiPanel · gain, dead zone and filtering"))
+        bl2.addWidget(PageTitle(L("Sensitivity"), L("DpiPanel · gain, dead zone and filtering")))
 
         panel = Card(T.RADIUS_LG, T.SURFACE)
         pl = QVBoxLayout(panel)
         pl.setContentsMargins(22, 18, 22, 18)
         pl.setSpacing(16)
-        pl.addWidget(Text("Gain curve", 11.0, True))
-        for lab, lo, hi, v, u in (("Yaw gain (counts / degree)", 3, 60, 18, ""),
-                                  ("Pitch gain (counts / degree)", 3, 60, 18, ""),
-                                  ("Soft dead zone (dps x 10)", 0, 20, 4, ""),
-                                  ("Low-pass cutoff (Hz)", 10, 60, 35, " Hz")):
+        pl.addWidget(Text(L("Gain curve"), 11.0, True))
+        for lab, lo, hi, v, u in ((L("Yaw gain (counts / degree)"), 3, 60, 18, ""),
+                                  (L("Pitch gain (counts / degree)"), 3, 60, 18, ""),
+                                  (L("Soft dead zone (dps x 10)"), 0, 20, 4, ""),
+                                  (L("Low-pass cutoff (Hz)"), 10, 60, 35, " Hz")):
             pl.addWidget(SliderRow(lab, lo, hi, v, u))
         bl2.addWidget(panel)
 
@@ -374,7 +380,7 @@ class DeviceDetailPage(QWidget):
         cl = QVBoxLayout(canvas)
         cl.setContentsMargins(22, 16, 22, 16)
         cl.setSpacing(8)
-        cl.addWidget(Text("Live angular rate (DpiCanvas)", 11.0, True))
+        cl.addWidget(Text(L("Live angular rate (DpiCanvas)"), 11.0, True))
         sp = Sparkline(color=T.PRIMARY)
         sp.synth(0, 120, 26)
         self.sp_live = sp
@@ -388,8 +394,53 @@ class DeviceDetailPage(QWidget):
 
 # ============ shell ============
 
+class SettingsDialog(QDialog):
+    """The only setting that changes the whole window is the language."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(L("Settings"))
+        self.setModal(True)
+        self.setFixedWidth(360)
+        self.setStyleSheet("QDialog{background:%s;} QLabel{color:%s;}"
+                           % (T.SURFACE, T.ON_BG))
+
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(22, 20, 22, 18)
+        lay.setSpacing(12)
+
+        head = QLabel(L("Interface language"))
+        head.setFont(app_font(10.5, True))
+        lay.addWidget(head)
+
+        self.box = QComboBox()
+        self.box.setFont(app_font(10.0))
+        self.box.setStyleSheet(
+            "QComboBox{color:%s;background:%s;border:1px solid %s;"
+            "border-radius:6px;padding:6px 10px;}"
+            % (T.ON_BG, T.SURFACE_2, T.OUTLINE))
+        for code, label in i18n.LANGS:
+            self.box.addItem(label, code)
+        cur = i18n.current()
+        self.box.setCurrentIndex(0 if cur == "en" else 1)
+        lay.addWidget(self.box)
+
+        row = QHBoxLayout()
+        row.addStretch(1)
+        cancel = ProtoButton(L("Cancel"))
+        cancel.clicked.connect(self.reject)
+        ok = ProtoButton(L("Apply"))
+        ok.clicked.connect(self.accept)
+        row.addWidget(cancel)
+        row.addWidget(ok)
+        lay.addLayout(row)
+
+    def choice(self):
+        return self.box.currentData()
+
+
 class Header(QWidget):
-    def __init__(self, on_nav):
+    def __init__(self, on_nav, on_settings=None):
         super().__init__()
         self.setFixedHeight(T.HEADER_H)
         self.setStyleSheet("background:%s;" % T.BG)
@@ -414,10 +465,13 @@ class Header(QWidget):
         pl.setContentsMargins(12, 0, 16, 0)
         pl.setSpacing(9)
         pl.addWidget(PaintWidget(i_desktop, 26, 26))
-        pl.addWidget(Text("Desktop: Default", 10.0))
+        pl.addWidget(Text(L("Desktop: Default"), 10.0))
         lay.addWidget(pill)
         lay.addSpacing(16)
-        lay.addWidget(IconButton(i_gear, 34))
+        gear = IconButton(i_gear, 34)
+        if on_settings:
+            gear.clicked.connect(on_settings)
+        lay.addWidget(gear)
         lay.addSpacing(2)
         lay.addWidget(IconButton(i_user, 34))
 
@@ -511,8 +565,8 @@ class MainWindow(QWidget):
             self.stack.addWidget(self.pages[k])
 
         self.source = source if source is not None else default_source()
-        self.header = Header(self.on_nav)
-        self.status = StatusBar("source: %s" % self.source.name)
+        self.header = Header(self.on_nav, self.open_settings)
+        self.status = StatusBar(L("source: %s") % self.source.name)
         self.poller = Poller(self.source, self)
         self.poller.done.connect(self._apply)
         self.poller.start()
@@ -526,6 +580,15 @@ class MainWindow(QWidget):
         self.content.addWidget(self.detail)
         root.addWidget(self.content, 1)
         root.addWidget(self.status)
+
+    def open_settings(self):
+        dlg = SettingsDialog(self)
+        if dlg.exec_():
+            code = dlg.choice()
+            if code != i18n.current():
+                i18n.set_lang(code)
+                self.restart = True
+                self.close()
 
     def send_profile(self, cmd):
         self.status.set_text("%s  →  sending" % (cmd,))
@@ -543,13 +606,13 @@ class MainWindow(QWidget):
         try:
             d = self.source.poll()
         except Exception as e:
-            self.status.set_text("source error: %r" % (e,))
+            self.status.set_text(L("source error: %r") % (e,))
             return
         self._apply(d or {})
 
     def _apply(self, d):
         if d.get("_error"):
-            self.status.set_text("source error: %s" % (d["_error"],))
+            self.status.set_text(L("source error: %s") % (d["_error"],))
             return
         if not d:
             self.status.set_text("%s  ·  %s" % (self.source.name, self.source.note))
@@ -566,7 +629,7 @@ class MainWindow(QWidget):
             try:
                 fn(d)
             except Exception as e:
-                self.status.set_text("update_data failed: %r" % (e,))
+                self.status.set_text(L("update_data failed: %r") % (e,))
 
     def closeEvent(self, e):
         try:
@@ -599,8 +662,16 @@ class MainWindow(QWidget):
 
 def main():
     qa = QApplication(sys.argv)
-    w = MainWindow(); w.show()
-    qa.exec_()
+    i18n.load()
+    # the window is rebuilt once when the language changes, so every label is
+    # re-created through L() with the new language in effect
+    while True:
+        w = MainWindow()
+        w.restart = False
+        w.show()
+        qa.exec_()
+        if not w.restart:
+            break
 
 
 if __name__ == "__main__":
