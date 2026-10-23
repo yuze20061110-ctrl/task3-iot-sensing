@@ -15,7 +15,12 @@ TS_CMD_ID         = ""
 TS_CMD_WRITE_KEY  = ""
 TS_CMD_READ_KEY   = ""
 
-SERIAL_TELEMETRY = True   # emit @gz|gy|temp|shots|present|session|vsys once per publish
+SERIAL_TELEMETRY = True
+
+# Optional status LED: solid = uplink up, slow blink = no wifi.
+# Any free GPIO works (GP2..GP11, GP17..GP22, GP26..GP28).
+# Wire 3V3 -> 330 ohm -> anode, cathode -> the chosen pin (LOW lights it).
+PIN_LED = None   # emit @gz|gy|temp|shots|present|session|vsys once per publish
 
 UPLOAD_S = 15            # ThingSpeak free tier: one update per 15 s
 CMD_POLL_S = 30
