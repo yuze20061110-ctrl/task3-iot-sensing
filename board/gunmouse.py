@@ -282,6 +282,7 @@ def _run_inner():
     sessions = 0
     present = 0
     was_present = 0
+    last_pir_emit = -1
     session_start = 0
     session_s = 0
     last_seen_ms = time.ticks_ms()
@@ -394,6 +395,12 @@ def _run_inner():
             session_start = now_ms
             sessions += 1
         was_present = present
+        if present != last_pir_emit:
+            last_pir_emit = present
+            try:
+                print('#PIR %d' % present)
+            except Exception:
+                pass
         session_s = int(time.ticks_diff(now_ms, session_start) / 1000) if present else 0
         if (now_ms & 0x7F) == 0:
             c = shared.STATE['cfg']
