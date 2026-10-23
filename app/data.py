@@ -20,6 +20,25 @@ FIELDS = 8
 HISTORY = 240
 
 
+def find_pico_port():
+    """Return the serial device of a Raspberry Pi Pico, or None.
+
+    The board enumerates with vendor id 0x2E8A; the console/REPL interface and the
+    data interface share that id, so the first match is used.
+    """
+    try:
+        from serial.tools import list_ports
+    except Exception:
+        return None
+    for p in list_ports.comports():
+        try:
+            if p.vid == 0x2E8A:
+                return p.device
+        except Exception:
+            continue
+    return None
+
+
 class Source(object):
     name = "base"
 
@@ -173,20 +192,36 @@ class SerialSource(Source):
     """Reads '@gz|gy|temp|shots|present|session|vsys' lines from the Pico."""
     name = "serial"
 
-    def __init__(self, port="COM13", baud=115200):
+    def __init__(self, port=None, baud=115200):
         super().__init__()
-        self.note = "port %s" % port
+        self.baud = baud
+        self.port = port or find_pico_port()
         self.ser = None
+        self._buf = ""
+        self._retry_at = 0.0
+        self._ack_at = 0.0
+        self.note = "no Pico found"
+        self._open()
+
+    def _open(self):
+        if not self.port:
+            self.port = find_pico_port()
+        if not self.port:
+            self.note = "no Pico found"
+            return False
         try:
             import serial
-            self.ser = serial.Serial(port, baud, timeout=0.2)
+            self.ser = serial.Serial(self.port, self.baud, timeout=0.2)
             self.ser.setDTR(False)
             self.ser.setRTS(False)
             self.online = True
-            self.note = "connected %s" % port
+            self.note = "connected " + str(self.port)
+            return True
         except Exception as e:
             self.ser = None
+            self.online = False
             self.note = "open failed: %s" % (e,)
+            return False
 
     def send(self, text):
         if self.ser is None:
@@ -198,8 +233,16 @@ class SerialSource(Source):
             return "write failed: %s" % (e,)
 
     def poll(self):
+        import time as _t
+        if self.ser is not None and _t.time() - getattr(self, "_ack_at", 0.0) > 6.0:
+            self.note = "streaming %s" % self.ser.port
         if self.ser is None:
-            return self.latest
+            now = _t.time()
+            if now >= self._retry_at:
+                self._retry_at = now + 2.0
+                self._open()
+            if self.ser is None:
+                return self.latest
         try:
             n = self.ser.in_waiting
             raw = self.ser.read(n) if n else b""
@@ -212,6 +255,11 @@ class SerialSource(Source):
         *lines, self._buf = text.split("\n")
         for ln in lines:
             ln = ln.strip()
+            if ln.startswith("#ACK"):
+                import time as _t
+                self.note = "device: " + ln[5:].strip()
+                self._ack_at = _t.time()
+                continue
             if not ln.startswith("@"):
                 continue
             try:
@@ -226,7 +274,6 @@ class SerialSource(Source):
                 d["wave"] = (prev + [max(0, min(255, int(abs(d["gz"]))))])[-15:]
                 self._push(d)
                 self.online = True
-                self.note = "streaming %s" % self.ser.port
             except Exception:
                 continue
         return self.latest
