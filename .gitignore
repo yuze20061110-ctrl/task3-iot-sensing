@@ -6,3 +6,6 @@ Thumbs.db
 
 # credentials are never committed; copy ts_cfg.example.py instead
 ts_cfg.py
+
+# the saved interface language is per-machine state
+app/settings.json
